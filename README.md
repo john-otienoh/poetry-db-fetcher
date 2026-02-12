@@ -1,5 +1,9 @@
 # Poetry Database Fetcher
 
+[![wakatime](https://wakatime.com/badge/user/6d7c48ee-9185-4251-a234-e029aa6b148d/project/4b1f021e-32ba-49c5-937b-91dea0ddfcb6.svg)](https://wakatime.com/badge/user/6d7c48ee-9185-4251-a234-e029aa6b148d/project/4b1f021e-32ba-49c5-937b-91dea0ddfcb6)
+
+[![wakatime](https://wakatime.com/badge/github/john-otienoh/poetry-db-fetcher.svg)](https://wakatime.com/badge/github/john-otienoh/poetry-db-fetcher)
+
 A Python application that fetches poems from the [PoetryDB API](https://poetrydb.org/) and stores them in a PostgreSQL database. Perfect for building a personal poetry collection, data analysis, or just enjoying random poems!
 
 ## Table of Contents
