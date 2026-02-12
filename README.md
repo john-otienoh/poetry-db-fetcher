@@ -34,7 +34,7 @@ A Python application that fetches poems from the [PoetryDB API](https://poetrydb
 - **PostgreSQL 12+**
 - **pip** (Python package manager)
 
-## 📦 Installation
+## Installation
 
 1. **Clone the repository:**
    ```bash
@@ -53,7 +53,7 @@ A Python application that fetches poems from the [PoetryDB API](https://poetrydb
    pip install -r requirements.txt
    ```
 
-## ⚙️ Configuration
+## Configuration
 
 1. **Create a `.env` file** in the project root:
 
@@ -216,7 +216,7 @@ poetry-db-fetcher/
 | `get_poems_by_author(author)` | Get poems by author | `List[Dict]` |
 | `delete_poem(id)` | Delete poem | `bool` |
 
-## 🔍 Troubleshooting
+## Troubleshooting
 
 ### "No poems found in database" after insertion
 
