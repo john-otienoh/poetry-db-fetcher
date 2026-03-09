@@ -12,13 +12,13 @@ class PoetryDBClient:
         self._cfg = config or APIConfig()
         self._session = requests.Session()
     
-    def __enter__(self) -> "PoetryDBClient":
+    def __enter__(self):
         return self
 
-    def __exit__(self, *_) -> None:
+    def __exit__(self, *_):
         self.close()
 
-    def close(self) -> None:
+    def close(self):
         self._session.close()
 
     def _get(self, path: str):

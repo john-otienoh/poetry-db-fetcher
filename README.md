@@ -206,13 +206,45 @@ poetry-db-fetcher/
 
 
 ## Sample Output
+```bash
+python3 view_poems.py 
+usage: view_poems.py [-h] command ...
 
+Browse your local poetry database.
+
+positional arguments:
+  command
+    list      List all poems
+    view      View a poem by id
+    search    Search poems by title or author
+    author    Show poems by a specific author
+    stats     Show database statistics
+
+options:
+  -h, --help  show this help message and exit
+
+examples:
+  python view_poems.py list --limit 20
+  python view_poems.py view 3
+  python view_poems.py search "raven"
+  python view_poems.py author "Emily Dickinson"
+  python view_poems.py stats
+
+ python3 view_poems.py list --limit 5
+                          All poems (57 total)                          
+┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┓
+┃ ID     ┃ Title                      ┃ Author               ┃   Lines ┃
+┡━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━┩
+│ 1      │ Not at Home to Callers     │ Emily Dickinson      │       4 │
+│ 2      │ Defrauded I a Butterfly -- │ Emily Dickinson      │       2 │
+│ 3      │ Al Aaraaf                  │ Edgar Allan Poe      │     424 │
+│ 4      │ Cradle Song                │ Lord Alfred Tennyson │      16 │
+│ 5      │ Endymion: Book IV          │ John Keats           │    1010 │
+└────────┴────────────────────────────┴──────────────────────┴─────────┘
+```
 
 
 ## Future Improvements Suggestions
-Here are the directions you could take this project, grouped by theme:
-
----
 
 **Data & Storage**
 - Add a `poets` table with biographical info (birth year, nationality, era) and link it to poems via a foreign key instead of storing author as a plain string

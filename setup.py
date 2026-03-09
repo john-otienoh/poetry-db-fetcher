@@ -12,7 +12,7 @@ from config import DBConfig, get_logger
 
 logger = get_logger(__name__)
 
-def create_database(cfg: DBConfig) -> None:
+def create_database(cfg: DBConfig):
     """Create the target database if it does not already exist."""
     conn = psycopg2.connect(**{**cfg.as_dict(), "dbname": "postgres"})
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
@@ -44,7 +44,7 @@ def run_schema(cfg: DBConfig):
         conn.close()
 
 
-def main() -> None:
+def main():
     cfg = DBConfig()
     logger.info("Setting up database '%s' on %s:%s…", cfg.name, cfg.host, cfg.port)
 

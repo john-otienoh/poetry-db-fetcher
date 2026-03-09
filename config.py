@@ -22,7 +22,6 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
     handlers=[
         logging.FileHandler(_log_file),
-        # logging.StreamHandler(),
     ],
 )
 
@@ -38,7 +37,7 @@ class DBConfig:
     user: str = os.getenv("DB_USER", "postgres")
     password: str = os.getenv("DB_PASSWORD", "")
 
-    def as_dict(self) -> dict:
+    def as_dict(self):
         return {
             "host": self.host,
             "port": self.port,

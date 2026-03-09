@@ -11,19 +11,19 @@ logger = get_logger(__name__)
 class DatabaseConnection:
     """Manages a single PostgreSQL connection with convenience query methods."""
 
-    def __init__(self, config: Optional[DBConfig] = None) -> None:
+    def __init__(self, config: Optional[DBConfig] = None):
         self._cfg = config or DBConfig()
         self._conn: Optional[psycopg2.extensions.connection] = None
         self._cursor: Optional[psycopg2.extensions.cursor] = None
 
-    def connect(self) -> None:
+    def connect(self):
         """Open the database connection."""
         self._conn = psycopg2.connect(**self._cfg.as_dict())
         self._conn.autocommit = True
         self._cursor = self._conn.cursor(cursor_factory=RealDictCursor)
         logger.info("Connected to database '%s'", self._cfg.name)
 
-    def close(self) -> None:
+    def close(self)
         """Close cursor and connection gracefully."""
         if self._cursor:
             self._cursor.close()
@@ -31,15 +31,15 @@ class DatabaseConnection:
             self._conn.close()
             logger.info("Database connection closed")
 
-    def __enter__(self) -> "DatabaseConnection":
+    def __enter__(self):
         self.connect()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
 
-    def _execute(self, query: str, params: tuple = (), *, fetch: bool = True) -> list[dict]:
+    def _execute(self, query: str, params: tuple = (), *, fetch: bool = True):
         """
         Execute *query* and return rows when fetch=True, else an empty list.
         Raises any psycopg2 exception to the caller.
@@ -84,20 +84,20 @@ class DatabaseConnection:
             logger.error("Failed to insert poem '%s': %s", title, exc)
             return False
 
-    def insert_poems_batch(self, poems: list[dict]) -> tuple[int, int]:
+    def insert_poems_batch(self, poems: list[dict]):
         """Insert a list of poem dicts. Returns (success_count, failure_count)."""
         success = sum(1 for p in poems if self.insert_poem(p))
         failed = len(poems) - success
         logger.info("Batch insert complete: %d succeeded, %d failed", success, failed)
         return success, failed
 
-    def get_all_poems(self) -> list[dict]:
+    def get_all_poems(self):
         """Return all poems ordered by id."""
         return self._execute(
             "SELECT id, title, author, lines, linecount, created_at FROM poems ORDER BY id"
         )
 
-    def get_poem_by_id(self, poem_id: int) -> Optional[dict]:
+    def get_poem_by_id(self, poem_id: int):
         """Return a single poem by primary key, or None."""
         rows = self._execute(
             "SELECT id, title, author, lines, linecount, created_at FROM poems WHERE id = %s",
@@ -105,14 +105,14 @@ class DatabaseConnection:
         )
         return rows[0] if rows else None
 
-    def get_poems_by_author(self, author: str) -> list[dict]:
+    def get_poems_by_author(self, author: str):
         """Case-insensitive author search using ILIKE."""
         return self._execute(
             "SELECT id, title, author, linecount, created_at FROM poems WHERE author ILIKE %s ORDER BY title",
             (f"%{author}%",),
         )
 
-    def search_poems(self, term: str) -> list[dict]:
+    def search_poems(self, term: str):
         """
         Full-text search across title and author using pg_trgm similarity.
         Falls back to ILIKE if trigram extension is unavailable.
@@ -146,7 +146,7 @@ class DatabaseConnection:
             logger.error("Failed to delete poem id=%d: %s", poem_id, exc)
             return False
 
-    def get_statistics(self) -> dict[str, Any]:
+    def get_statistics(self):
         """Return a dict of aggregate stats about the poems table."""
         rows = self._execute("""
             SELECT
