@@ -5,6 +5,8 @@ from typing import Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.markdown import Markdown
+from rich import print as rprint
 
 from conn import DatabaseConnection
 
@@ -44,6 +46,44 @@ def cmd_list(limit: Optional[int]):
     console.print(_poem_table(f"All poems ({len(poems)} total)", subset))
 
 
+def cmd_export(poem_id: int, format: str = "text"):
+    """Export a poem to different formats."""
+    with DatabaseConnection() as db:
+        poem = db.get_poem_by_id(poem_id)
+        
+        if not poem:
+            console.print(f"✗ [red]No poem found with ID: {poem_id}[/red]")
+            return
+        
+        if format == "json":
+            output = {
+                'id': poem['id'],
+                'title': poem['title'],
+                'author': poem['author'],
+                'lines': poem['lines'],
+                'linecount': poem['linecount'],
+                'created_at': str(poem['created_at'])
+            }
+            console.print_json(data=output)
+            
+        elif format == "markdown":
+            lines = poem['lines']
+            if isinstance(lines, str):
+                try:
+                    lines = json.loads(lines)
+                except:
+                    lines = [lines]
+            
+            md = f"# {poem['title']}\n\n"
+            md += f"*by {poem['author']}*\n\n"
+            for line in lines:
+                md += f"{line}\n\n"
+            
+            console.print(Markdown(md))
+            
+        else:
+            cmd_view(poem_id=poem_id)
+            
 def cmd_view(poem_id: int):
     with DatabaseConnection() as db:
         poem = db.get_poem_by_id(poem_id)
@@ -123,6 +163,7 @@ examples:
   python view_poems.py search "raven"
   python view_poems.py author "Emily Dickinson"
   python view_poems.py stats
+  python view_poems.py export 1 --format json
         """,
     )
     sub = parser.add_subparsers(dest="command", metavar="command")
@@ -139,6 +180,12 @@ examples:
     au = sub.add_parser("author", help="Show poems by a specific author")
     au.add_argument("name")
 
+    export_parser = sub.add_parser("export", help="Export a poem")
+    export_parser.add_argument("poem_id", type=int, help="Poem ID")
+    export_parser.add_argument("--format", choices=["text", "json", "markdown"], 
+                              default="text", help="Export format")
+    
+
     sub.add_parser("stats", help="Show database statistics")
     return parser
 
@@ -152,6 +199,7 @@ def main():
         "view":   lambda: cmd_view(args.poem_id),
         "search": lambda: cmd_search(args.term),
         "author": lambda: cmd_author(args.name),
+        "export": lambda: cmd_export(args.poem_id, args.format),
         "stats":  cmd_stats,
     }
 

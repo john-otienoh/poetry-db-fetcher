@@ -1,6 +1,5 @@
 """
 Centralized configuration and logging setup.
-All other modules import from here — no repeated boilerplate.
 """
 import logging
 import os

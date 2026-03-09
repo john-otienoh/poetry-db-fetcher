@@ -23,7 +23,7 @@ class DatabaseConnection:
         self._cursor = self._conn.cursor(cursor_factory=RealDictCursor)
         logger.info("Connected to database '%s'", self._cfg.name)
 
-    def close(self)
+    def close(self):
         """Close cursor and connection gracefully."""
         if self._cursor:
             self._cursor.close()

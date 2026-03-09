@@ -207,7 +207,8 @@ poetry-db-fetcher/
 
 ## Sample Output
 ```bash
-python3 view_poems.py 
+$ python3 view_poems.py 
+
 usage: view_poems.py [-h] command ...
 
 Browse your local poetry database.
@@ -219,6 +220,7 @@ positional arguments:
     search    Search poems by title or author
     author    Show poems by a specific author
     stats     Show database statistics
+    export    Export the poem data
 
 options:
   -h, --help  show this help message and exit
@@ -229,8 +231,9 @@ examples:
   python view_poems.py search "raven"
   python view_poems.py author "Emily Dickinson"
   python view_poems.py stats
+  python view_poems.py export 1 --format json
 
- python3 view_poems.py list --limit 5
+$ python3 view_poems.py list --limit 5
                           All poems (57 total)                          
 ┏━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┓
 ┃ ID     ┃ Title                      ┃ Author               ┃   Lines ┃
