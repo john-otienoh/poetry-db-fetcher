@@ -2,100 +2,61 @@
 Database setup script.
 Run this first to create the database schema.
 """
-import os
+import sys
+from pathlib import Path
+
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from dotenv import load_dotenv
 
-load_dotenv()
+from config import DBConfig, get_logger
 
-def create_database():
-    """Create the database if it doesn't exist."""
-    db_name = os.getenv('DB_NAME', 'poetry_data')
-    user = os.getenv('DB_USER', 'postgres')
-    password = os.getenv('DB_PASSWORD', 'postgres')
-    host = os.getenv('DB_HOST', 'localhost')
-    port = os.getenv('DB_PORT', '5432')
-    
+logger = get_logger(__name__)
+
+def create_database(cfg: DBConfig) -> None:
+    """Create the target database if it does not already exist."""
+    conn = psycopg2.connect(**{**cfg.as_dict(), "dbname": "postgres"})
+    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     try:
-        # Connect to default postgres database
-        conn = psycopg2.connect(
-            host=host,
-            port=port,
-            database='postgres',
-            user=user,
-            password=password
-        )
-        conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-        cursor = conn.cursor()
-        
-        # Check if database exists
-        cursor.execute(f"SELECT 1 FROM pg_database WHERE datname = '{db_name}'")
-        exists = cursor.fetchone()
-        
-        if not exists:
-            cursor.execute(f"CREATE DATABASE {db_name}")
-            print(f"Database '{db_name}' created successfully")
-        else:
-            print(f"Database '{db_name}' already exists")
-        
-        cursor.close()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (cfg.name,))
+            if cur.fetchone():
+                logger.info("Database '%s' already exists.", cfg.name)
+            else:
+                cur.execute(f'CREATE DATABASE "{cfg.name}"')
+                logger.info("Database '%s' created.", cfg.name)
+    finally:
         conn.close()
-        return True
-        
-    except Exception as e:
-        print(f"Failed to create database: {e}")
-        return False
 
-
-def run_schema():
+def run_schema(cfg: DBConfig):
     """Run the schema.sql file."""
+    schema_path = Path(__file__).parent / "schema.sql"
+    if not schema_path.exists():
+        raise FileNotFoundError(f"schema.sql not found at {schema_path}")
+
+    sql = schema_path.read_text()
+    conn = psycopg2.connect(**cfg.as_dict())
     try:
-        # Read schema file
-        with open('schema.sql', 'r') as f:
-            schema = f.read()
-        
-        # Connect to the database
-        conn = psycopg2.connect(
-            host=os.getenv('DB_HOST', 'localhost'),
-            port=os.getenv('DB_PORT', '5432'),
-            database=os.getenv('DB_NAME', 'poetry_data'),
-            user=os.getenv('DB_USER', 'postgres'),
-            password=os.getenv('DB_PASSWORD', 'postgres')
-        )
-        cursor = conn.cursor()
-        
-        # Execute schema
-        cursor.execute(schema)
+        with conn.cursor() as cur:
+            cur.execute(sql)
         conn.commit()
-        
-        print("Schema created successfully")
-        
-        cursor.close()
+        logger.info("Schema applied successfully.")
+    finally:
         conn.close()
-        return True
-        
-    except Exception as e:
-        print(f"Failed to create schema: {e}")
-        return False
 
 
-def main():
-    """Setup the database."""
-    print("DATABASE SETUP")
-    print("=" * 60)
-    
-    # Step 1: Create database
-    if not create_database():
-        print("Setup failed at database creation")
-        return
-    
-    # Step 2: Create schema
-    if not run_schema():
-        print("Setup failed at schema creation")
-        return
-    
-    print("\nDatabase setup complete!")
+def main() -> None:
+    cfg = DBConfig()
+    logger.info("Setting up database '%s' on %s:%s…", cfg.name, cfg.host, cfg.port)
+
+    create_database(cfg)
+    run_schema(cfg)
+
+    logger.info("Setup complete. You can now run fetch_data.py.")
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        logger.error("Setup failed: %s", exc)
+        sys.exit(1)

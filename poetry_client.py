@@ -1,80 +1,45 @@
 #!/usr/bin/env python3
 import requests
-import time
-import os
-from typing import Dict, List, Optional, Union
-import logging
-from datetime import datetime
+from config import APIConfig, get_logger
 
-log_dir = 'logs'
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
-
-log_filename = os.path.join(log_dir, f'poetry_db_{datetime.now().strftime("%Y%m%d")}.log')
-
-# Configure logging to file
-logging.basicConfig(
-    level=os.getenv('LOG_LEVEL', 'INFO'),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_filename)
-    ]
-)
-
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PoetryDBClient:
     """Client for interacting with the PoetryDB API."""
+
+    def __init__(self, config: APIConfig | None = None):
+        self._cfg = config or APIConfig()
+        self._session = requests.Session()
     
-    BASE_URL = 'https://poetrydb.org/'
-    TIMEOUT = 1000000
-    
-    # Class constants for endpoints
-    ENDPOINT_RANDOM = 'random'
-    ENDPOINT_TITLES = 'titles'
-    ENDPOINT_AUTHOR = 'author'
-    
-    def __init__(self):
-        self.session = requests.Session()
-    
-    def _make_request(self, endpoint: str, params: Optional[Dict] = None) -> Union[Dict, List]:
+    def __enter__(self) -> "PoetryDBClient":
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.close()
+
+    def close(self) -> None:
+        self._session.close()
+
+    def _get(self, path: str):
         """
-        Make a request to the PoetryDB API.
-        
-        Args:
-            endpoint: API endpoint to call
-            params: Optional query parameters
-            
-        Returns:
-            JSON response as dictionary or list
-            
-        Raises:
-            Exception: If the request fails
+        GET {base_url}/{path} and return the parsed JSON.
+        Raises RuntimeError on any network or HTTP failure.
         """
-        url = f"{self.BASE_URL}{endpoint}"
-        
+        url = f"{self._cfg.base_url}{path}"
         try:
-            start_time = time.time()
-            response = self.session.get(url, params=params, timeout=self.TIMEOUT)
+            response = self._session.get(url, timeout=self._cfg.timeout)
             response.raise_for_status()
-            response_time = int((time.time() - start_time) * 1000)
-            logger.info(f"API Request successful: {endpoint} ({response_time}ms)")
-            
+            logger.debug("GET %s -> %d", url, response.status_code)
             return response.json()
-        except requests.exceptions.Timeout:
-            logger.error(f"API request timed out: {endpoint}")
-            raise Exception("API request timed out")
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {endpoint} - {e}")
-            raise Exception(f"API request failed: {e}")
-            
-        except ValueError as e:
-            logger.error(f"Invalid JSON response: {e}")
-            raise Exception(f"Invalid JSON response: {e}")
+        except requests.Timeout:
+            raise RuntimeError(f"Request timed out: {url}")
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Request failed: {url} — {exc}") from exc
+        except ValueError as exc:
+            raise RuntimeError(f"Invalid JSON from {url}: {exc}") from exc
     
-    def get_random_poem(self, count: int = 1) -> List[Dict]:
+    def get_random_poem(self, count: int = 1):
         """
         Fetch random poem(s) from the PoetryDB API.
         
@@ -87,24 +52,20 @@ class PoetryDBClient:
         Raises:
             Exception: If the API request fails
         """
+        path = "random" if count == 1 else f"random/{count}"
         try:
-            endpoint = self.ENDPOINT_RANDOM
-            if count > 1:
-                endpoint = f"{endpoint}/{count}"
-
-            data =  self._make_request(endpoint=endpoint)
+            data = self._get(path)
             if isinstance(data, dict):
                 return [data]
-            elif isinstance(data, list):
+            if isinstance(data, list):
                 return data
-            else:
-                logger.warning(f"Unexpected response format: {type(data)}")
-                return []
-        except Exception as e:
-            logger.error(f"Error fetching random poem: {e}")
+            logger.warning("Unexpected response type from API: %s", type(data))
+            return []
+        except RuntimeError as exc:
+            logger.error("get_random_poems failed: %s", exc)
             return []
     
-    def get_poem_titles(self) -> List[str]:
+    def get_poem_titles(self):
         """
         Fetch poem titles.
             
@@ -112,65 +73,23 @@ class PoetryDBClient:
             List of Poem titles
         """
         try:
-            endpoint = self.ENDPOINT_TITLES
-            data = self._make_request(endpoint)
-            
-            return data
-            
-        except Exception as e:
-            logging.error(f"Error fetching poem titles: {e}")
+            data = self._get("title")
+            return data.get("titles", []) if isinstance(data, dict) else []
+        except RuntimeError as exc:
+            logger.error("get_titles failed: %s", exc)
             return []
+
     
     def get_poem_authors(self):
         """
         Fetch poets.
-        
         Returns:
             List of poets
         """
         try:
-            endpoint = self.ENDPOINT_AUTHOR
-            data = self._make_request(endpoint)
-            return data
-            
-        except Exception as e:
-            print(f"Error fetching poems by author: {e}")
+            data = self._get("author")
+            return data.get("authors", []) if isinstance(data, dict) else []
+        except RuntimeError as exc:
+            logger.error("get_authors failed: %s", exc)
             return []
     
-    def close(self):
-        """Close the session."""
-        self.session.close()
-    def __enter__(self):
-        """Context manager entry."""
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.close()
-
-def main():
-    """Example usage of the PoetryDBClient."""
-    client = PoetryDBClient()
-    
-    try:
-        # Get a random poem
-        print("Fetching a random poem...\n")
-        poems = client.get_random_poem()
-        
-        if poems:
-            print(poems[0])
-        else:
-            print("Failed to fetch poem.")
-
-        authors = client.get_poem_authors()
-        print(f"\nTotal authors in database: {len(authors)}")
-
-
-        titles = client.get_poem_titles()
-        print(f"\nTotal authors in database: {len(titles)}")
-        
-    finally:
-        client.close()
-
-if __name__ == "__main__":
-    main()

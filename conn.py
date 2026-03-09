@@ -1,256 +1,171 @@
+from typing import Any, Optional
+
 import psycopg2
-from psycopg2.extras import RealDictCursor, Json
-from datetime import datetime
-import os
-from dotenv import load_dotenv
-import logging
+from psycopg2.extras import Json, RealDictCursor
 
-# Load environment variables
-load_dotenv()
+from config import DBConfig, get_logger
 
-log_dir = 'logs'
-if not os.path.exists(log_dir):
-    os.makedirs(log_dir)
+logger = get_logger(__name__)
 
-log_filename = os.path.join(log_dir, f'poetry_db_{datetime.now().strftime("%Y%m%d")}.log')
-
-# Configure logging to file
-logging.basicConfig(
-    level=os.getenv('LOG_LEVEL', 'INFO'),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_filename)
-    ]
-)
-
-logger = logging.getLogger(__name__)
 
 class DatabaseConnection:
-    """Handle PostgreSQL database connections"""
-    
-    def __init__(self):
-        self.host = os.getenv('DB_HOST', 'localhost')
-        self.port = os.getenv('DB_PORT', '5432')
-        self.database = os.getenv('DB_NAME', 'poetry_data')
-        self.user = os.getenv('DB_USER', 'postgres')
-        self.password = os.getenv('DB_PASSWORD')
-        self.connection = None
-        self.cursor = None
-        logger.info(f"Database Connection Initialized for {self.database}")
-    
-    def connect(self):
-        """Establish database connection"""
-        try:
-            self.connection = psycopg2.connect(
-                host=self.host,
-                port=self.port,
-                database=self.database,
-                user=self.user,
-                password=self.password
-            )
-            self.connection.autocommit = True
-            self.cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-            logger.info(f"Connected to database: {self.database} (autocommit={self.connection.autocommit})")
-            return self.connection
-        
-        except Exception as e:
-            logger.error(f"✗ Database connection failed: {e}")
-            raise
-    
-    def close(self):
-        """Close database connection"""
-        if self.cursor:
-            self.cursor.close()
-            logger.debug("Cursor closed")
+    """Manages a single PostgreSQL connection with convenience query methods."""
 
-        if self.connection:
-            self.connection.close()
+    def __init__(self, config: Optional[DBConfig] = None) -> None:
+        self._cfg = config or DBConfig()
+        self._conn: Optional[psycopg2.extensions.connection] = None
+        self._cursor: Optional[psycopg2.extensions.cursor] = None
+
+    def connect(self) -> None:
+        """Open the database connection."""
+        self._conn = psycopg2.connect(**self._cfg.as_dict())
+        self._conn.autocommit = True
+        self._cursor = self._conn.cursor(cursor_factory=RealDictCursor)
+        logger.info("Connected to database '%s'", self._cfg.name)
+
+    def close(self) -> None:
+        """Close cursor and connection gracefully."""
+        if self._cursor:
+            self._cursor.close()
+        if self._conn:
+            self._conn.close()
             logger.info("Database connection closed")
-    
-    def execute_query(self, query, params=None, fetch=True):
-        """
-        Execute a SQL query
-        
-        Args:
-            query (str): SQL query to execute
-            params (tuple): Query parameters
-            fetch (bool): Whether to fetch results
-            
-        Returns:
-            list: Query results if fetch=True, else None
-        """
-        try:
-            if not self.connection:
-                self.connect()
-            
-            self.cursor.execute(query, params)
-            
-            if fetch:
-                return self.cursor.fetchall()
-            else:
-                self.connection.commit()
-                return None
-                
-        except Exception as e:
-            logger.error(f"Query execution failed: {e}")
-            if self.connection and not self.connection.autocommit:
-                self.connection.rollback()
-            raise
 
-    def insert_poem(self, poem):
-        """
-        Insert a poem into the database.
-
-        Args:
-            poem: Can be a dict, list of dicts, or SimpleNamespace object
-        """
-        query = """
-        INSERT INTO poems (
-            title, author, lines, linecount
-        ) VALUES (
-            %s, %s, %s, %s
-        )
-        """
-
-        if isinstance(poem, list):
-            if len(poem_data) == 0:
-                logger.warning("No poem data to insert")
-                return False
-            poem_data = poem[0]
-        elif isinstance(poem, dict):
-            poem_data = poem
-        else:
-            logger.error(f"Expected dict or list, got {type(poem)}")
-            return False
-
-        # Extract data safely with .get() for dicts
-        title = poem_data.get('title', 'Unknown Title')
-        author = poem_data.get('author', 'Unknown Author')
-
-        # Handle lines - ensure it's a list
-        lines = poem_data.get('lines', [])
-        if lines is None:
-            lines = []
-        elif isinstance(lines, str):
-            lines = [lines]
-        lines = list(lines) if lines else []
-
-        # Handle linecount
-        linecount = poem_data.get('linecount')
-        if linecount is None:
-            linecount = len(lines)
-        else:
-            try:
-                linecount = int(linecount)
-            except (ValueError, TypeError):
-                linecount = len(lines)
-
-        params = (title, author, Json(lines), linecount)
-
-        try:
-            self.execute_query(query, params, fetch=False)
-            self.connection.commit()
-            logger.info(f"Inserted poem: '{title}' by {author} having {linecount} lines.")
-            return True
-        except Exception as e:
-            logger.info(f"Failed to insert poem: {e}")
-            if self.connection:
-                self.connection.rollback()
-            return False
-        
-    def get_all_poems(self):
-        """Retrieve all poems from database"""
-        query = "SELECT id, title, author, lines, linecount, created_at FROM poems ORDER BY id"
-        return self.execute_query(query) or []
-    
-    def get_poem_by_id(self, poem_id: int) :
-        query = """
-        SELECT id, title, author, lines, linecount, created_at
-        FROM poems
-        WHERE id= %s
-        """
-        results = self.execute_query(query, (poem_id,))
-        return results[0] if results else None
-    
-    def get_poems_by_author(self, author: str):
-        query = """
-        SELECT id, title, linecount, created_at
-        FROM poems
-        WHERE author ILIKE %s
-        ORDER BY title
-        """
-        return self.execute_query(query, (f'%{author}%',)) or []
-
-    def delete_poem(self, poem_id: int):
-        query = "DELETE FROM poems WHERE id = %s"
-        try:
-            self.execute_query(query, (poem_id,), fetch=False)
-            logger.info(f"Deleted poem with ID: {poem_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete poem {poem_id}: {e}")
-            return False
-        
-    def insert_poems_batch(self, poems_list):
-        """Insert multiple poems in a single transaction."""
-        successful = 0
-        failed = 0
-        
-        for poem in poems_list:
-            if self.insert_poem(poem):
-                successful += 1
-            else:
-                failed += 1
-        
-        logger.info(f"✓ Batch insert complete: {successful} successful, {failed} failed")
-        return successful, failed
-    def get_statistics(self):
-        """Get database statistics."""
-        stats = {}
-        
-        # Total poems
-        result = self.execute_query("SELECT COUNT(*) as count FROM poems")
-        stats['total_poems'] = result[0]['count'] if result else 0
-        
-        # Total authors
-        result = self.execute_query("SELECT COUNT(DISTINCT author) as count FROM poems")
-        stats['total_authors'] = result[0]['count'] if result else 0
-        if result:
-            stats['top_author_count'] = result[0]['count']
-        
-        return stats
-        
-    def __enter__(self):
-        """Context manager entry."""
+    def __enter__(self) -> "DatabaseConnection":
         self.connect()
         return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.close()
 
 
-if __name__ == "__main__":
-    # Test database connection
-    db = DatabaseConnection()
-    
-    try:
-        db.connect()
-        
-        # Test query
-        stats = db.get_statistics()
-        for key, value in stats.items():
-            print(f"  {key}: {value}")
+    def _execute(self, query: str, params: tuple = (), *, fetch: bool = True) -> list[dict]:
+        """
+        Execute *query* and return rows when fetch=True, else an empty list.
+        Raises any psycopg2 exception to the caller.
+        """
+        if not self._conn:
+            self.connect()
+        self._cursor.execute(query, params)
+        return list(self._cursor.fetchall()) if fetch else []
 
-        
-        poems = db.get_all_poems()
-        if poems:
-            print(f"\nPoems in database: {len(poems)}")
-            for poem in poems:
-                print(f"  - {poem['title']} by {poem['author']} ({poem['linecount']} lines)")
-    
-    except Exception as e:
-        print(f"Error: {e}")
-    
-    finally:
-        db.close()
+
+    def insert_poem(self, poem: dict) -> bool:
+        """
+        Insert a single poem dict.  Returns True on success.
+        Accepts raw API response dicts (title, author, lines, linecount).
+        """
+        if not isinstance(poem, dict):
+            logger.error("insert_poem expects a dict, got %s", type(poem))
+            return False
+
+        title = poem.get("title") or "Unknown Title"
+        author = poem.get("author") or "Unknown Author"
+        lines = poem.get("lines") or []
+        if isinstance(lines, str):
+            lines = [lines]
+        lines = list(lines)
+
+        raw_lc = poem.get("linecount")
+        try:
+            linecount = int(raw_lc) if raw_lc is not None else len(lines)
+        except (ValueError, TypeError):
+            linecount = len(lines)
+
+        query = """
+            INSERT INTO poems (title, author, lines, linecount)
+            VALUES (%s, %s, %s, %s)
+        """
+        try:
+            self._execute(query, (title, author, Json(lines), linecount), fetch=False)
+            logger.info("Inserted '%s' by %s (%d lines)", title, author, linecount)
+            return True
+        except Exception as exc:
+            logger.error("Failed to insert poem '%s': %s", title, exc)
+            return False
+
+    def insert_poems_batch(self, poems: list[dict]) -> tuple[int, int]:
+        """Insert a list of poem dicts. Returns (success_count, failure_count)."""
+        success = sum(1 for p in poems if self.insert_poem(p))
+        failed = len(poems) - success
+        logger.info("Batch insert complete: %d succeeded, %d failed", success, failed)
+        return success, failed
+
+    def get_all_poems(self) -> list[dict]:
+        """Return all poems ordered by id."""
+        return self._execute(
+            "SELECT id, title, author, lines, linecount, created_at FROM poems ORDER BY id"
+        )
+
+    def get_poem_by_id(self, poem_id: int) -> Optional[dict]:
+        """Return a single poem by primary key, or None."""
+        rows = self._execute(
+            "SELECT id, title, author, lines, linecount, created_at FROM poems WHERE id = %s",
+            (poem_id,),
+        )
+        return rows[0] if rows else None
+
+    def get_poems_by_author(self, author: str) -> list[dict]:
+        """Case-insensitive author search using ILIKE."""
+        return self._execute(
+            "SELECT id, title, author, linecount, created_at FROM poems WHERE author ILIKE %s ORDER BY title",
+            (f"%{author}%",),
+        )
+
+    def search_poems(self, term: str) -> list[dict]:
+        """
+        Full-text search across title and author using pg_trgm similarity.
+        Falls back to ILIKE if trigram extension is unavailable.
+        """
+        query = """
+            SELECT id, title, author, linecount,
+                   similarity(title, %s)  AS title_sim,
+                   similarity(author, %s) AS author_sim
+            FROM poems
+            WHERE title  % %s
+               OR author % %s
+            ORDER BY GREATEST(similarity(title, %s), similarity(author, %s)) DESC
+        """
+        try:
+            return self._execute(query, (term, term, term, term, term, term))
+        except Exception:
+            logger.warning("pg_trgm unavailable, falling back to ILIKE search")
+            return self._execute(
+                "SELECT id, title, author, linecount FROM poems "
+                "WHERE title ILIKE %s OR author ILIKE %s ORDER BY title",
+                (f"%{term}%", f"%{term}%"),
+            )
+
+    def delete_poem(self, poem_id: int) -> bool:
+        """Delete a poem by id. Returns True on success."""
+        try:
+            self._execute("DELETE FROM poems WHERE id = %s", (poem_id,), fetch=False)
+            logger.info("Deleted poem id=%d", poem_id)
+            return True
+        except Exception as exc:
+            logger.error("Failed to delete poem id=%d: %s", poem_id, exc)
+            return False
+
+    def get_statistics(self) -> dict[str, Any]:
+        """Return a dict of aggregate stats about the poems table."""
+        rows = self._execute("""
+            SELECT
+                COUNT(*)                          AS total_poems,
+                COUNT(DISTINCT author)            AS total_authors,
+                COALESCE(AVG(linecount), 0)::int  AS avg_lines,
+                COALESCE(SUM(linecount), 0)       AS total_lines
+            FROM poems
+        """)
+        stats: dict[str, Any] = dict(rows[0]) if rows else {}
+        top = self._execute("""
+            SELECT author, COUNT(*) AS poem_count
+            FROM poems
+            GROUP BY author
+            ORDER BY poem_count DESC
+            LIMIT 1
+        """)
+        if top:
+            stats["top_author"] = top[0]["author"]
+            stats["top_author_count"] = top[0]["poem_count"]
+
+        return stats

@@ -167,101 +167,126 @@ with DatabaseConnection() as db:
 
 ## Project Structure
 
-```
+```bash
 poetry-db-fetcher/
-│
-├── .env                    # Environment variables
-├── .gitignore             # Git ignore file
-├── requirements.txt       # Python dependencies
-├── schema.sql            # PostgreSQL schema
-│
-├── conn.py               # Database connection handler
-├── poetry_client.py      # PoetryDB API client
-├── fetch_data.py         # Main data fetching script
-├── view_poems.py         # Poem viewer utility
-└── setup.py             # Database setup script
+├── config.py          # Centralised settings & logging (import from here, not basicConfig)
+├── conn.py            # DatabaseConnection — all DB logic lives here
+├── poetry_client.py   # PoetryDBClient — thin HTTP wrapper
+├── fetch_data.py      # Entry point: fetch N random poems and store them
+├── view_poems.py      # CLI browser for the local database
+├── setup.py           # One-shot DB + schema initialisation
+├── schema.sql         # PostgreSQL DDL (tables, indexes, views, seed data)
+├── requirements.txt
+└── .env               # Local credentials (never commit)
 ```
-
-### Module Descriptions
-
-| File | Description |
-|------|-------------|
-| `conn.py` | PostgreSQL connection manager with context support |
-| `poetry_client.py` | PoetryDB API wrapper with error handling |
-| `fetch_data.py` | Main script to fetch and store poems |
-| `view_poems.py` | CLI tool to view and search poems |
-| `setup_database.py` | One-click database setup |
 
 ## API Reference
 
-### PoetryDBClient
+### `DatabaseConnection` (`conn.py`)
 
-| Method | Description | Returns |
-|--------|-------------|---------|
-| `get_random_poem(count=1)` | Fetch random poem(s) | `List[Dict]` |
-| `get_poems_by_author(author)` | Fetch poems by author | `List[Dict]` |
-| `get_poem_by_title(title)` | Fetch poem by title | `List[Dict]` |
-| `get_all_titles()` | Get all poem titles | `List[str]` |
-| `get_all_authors()` | Get all authors | `List[str]` |
+| Method | Description |
+|---|---|
+| `insert_poem(poem)` | Insert a single poem dict |
+| `insert_poems_batch(poems)` | Bulk insert; returns `(success, failed)` |
+| `get_all_poems()` | All poems ordered by id |
+| `get_poem_by_id(id)` | Single poem or `None` |
+| `get_poems_by_author(author)` | Case-insensitive author search |
+| `search_poems(term)` | Trigram fuzzy search across title + author |
+| `delete_poem(id)` | Delete by id |
+| `get_statistics()` | Aggregate counts and top author |
 
-### DatabaseConnection
+### `PoetryDBClient` (`poetry_client.py`)
 
-| Method | Description | Returns |
-|--------|-------------|---------|
-| `insert_poem(poem_data)` | Insert single poem | `bool` |
-| `insert_poems_batch(poems)` | Insert multiple poems | `(success, failed)` |
-| `get_all_poems()` | Get all poems | `List[Dict]` |
-| `get_poem_by_id(id)` | Get poem by ID | `Dict` |
-| `search_poems(term)` | Search by title/author | `List[Dict]` |
-| `get_poems_by_author(author)` | Get poems by author | `List[Dict]` |
-| `delete_poem(id)` | Delete poem | `bool` |
+| Method | Description |
+|---|---|
+| `get_random_poems(count=1)` | Fetch random poems |
+| `get_authors()` | All author names |
+| `get_titles()` | All poem titles |
+| `get_poems_by_author(author)` | All poems for one author |
 
-## Troubleshooting
 
-### "No poems found in database" after insertion
+## Sample Output
 
-**Fix:** Enable autocommit in `conn.py`:
 
-```python
-def connect(self):
-    self.connection = psycopg2.connect(...)
-    self.connection.autocommit = True  # Add this line!
-```
 
-### "Relation 'poems' does not exist"
+## Future Improvements Suggestions
+Here are the directions you could take this project, grouped by theme:
 
-**Fix:** Run the database setup:
-```bash
-python setup_database.py
-```
+---
 
-### Connection refused
+**Data & Storage**
+- Add a `poets` table with biographical info (birth year, nationality, era) and link it to poems via a foreign key instead of storing author as a plain string
+- Track duplicate detection so re-fetching the same poem from the API doesn't insert it twice
+- Add full-text search using PostgreSQL's native `tsvector`/`tsquery` instead of relying solely on trigrams
+- Store the raw API JSON response in a separate column for auditing and reprocessing without re-fetching
+- Add soft deletes with a `deleted_at` timestamp instead of permanently removing rows
 
-**Check:**
-1. Is PostgreSQL running? `sudo systemctl status postgresql`
-2. Are credentials correct in `.env`?
-3. Can you connect manually? `psql -U postgres -d poetry_data`
+---
 
-### API rate limiting
+**API & Ingestion**
+- Schedule `fetch_data.py` to run automatically on a cron job or using APScheduler, building the collection passively over time
+- Fetch poems by specific author or title on demand, not just randomly
+- Add support for other poetry APIs (e.g. Poetry Foundation, Gutenberg) behind the same `PoetryDBClient` interface
+- Implement a sync/diff mechanism that only fetches poems not already in the database
+- Rate limiting and retry logic with exponential backoff for flaky network conditions
 
-PoetryDB is free but has rate limits. Add delays between requests:
-```python
-import time
-time.sleep(1)  # 1 second delay
-```
+---
 
-## Running Tests
+**Analysis & Intelligence**
+- Sentiment analysis on poem lines using a library like TextBlob or VADER to tag poems as melancholic, joyful, angry, etc.
+- Word frequency and vocabulary richness metrics per author
+- Detect rhyme schemes automatically by comparing line endings
+- Cluster poems by theme or style using embeddings and k-means
+- Identify the most and least complex poems using readability scores
 
-```bash
-# Test database connection
-python conn.py
+---
 
-# Test API connection
-python poetry_client.py
+**CLI & Interface**
+- Interactive TUI (terminal UI) using `textual` or `curses` so you can scroll and select poems without typing commands
+- Export a poem to a formatted PDF or plain text file directly from the CLI
+- A `random` command that picks and displays a poem of the day from your local collection
+- Colour-theme support so users can choose how the output looks
 
-# Test setup
-python setup.py
-```
+---
+
+**API Layer**
+- Wrap the database with a REST API using FastAPI, exposing endpoints like `GET /poems`, `GET /poems/{id}`, `POST /poems`, `DELETE /poems/{id}`
+- Add pagination, filtering, and sorting query parameters to list endpoints
+- Authentication with API keys so only authorised clients can write data
+- A `/stats` endpoint returning live database statistics as JSON
+
+---
+
+**Web Frontend**
+- A simple read-only web UI to browse and search the collection in a browser
+- A "poem of the day" page that picks a random poem on each visit
+- Author pages listing all their stored poems with metadata
+
+---
+
+**Testing & Reliability**
+- Unit tests for `insert_poem`, `search_poems`, and the API client using `pytest` and mocked HTTP responses
+- Integration tests that spin up a temporary PostgreSQL database using `pytest-postgresql` or Docker
+- A CI pipeline (GitHub Actions) that runs linting, type checks, and tests on every push
+- Property-based testing with `hypothesis` to throw unexpected data shapes at `insert_poem`
+
+---
+
+**DevOps & Deployment**
+- Dockerise the project with a `Dockerfile` and a `docker-compose.yml` that also spins up PostgreSQL
+- Environment-specific config files for development, staging, and production
+- Database migrations managed by Alembic so schema changes are versioned and reversible
+- Secrets management via environment injection rather than a plain `.env` file in production
+- Centralised structured logging (JSON format) shipped to a log aggregator like Loki or CloudWatch
+
+---
+
+**Observability**
+- Metrics tracking how many poems were fetched, inserted, and failed per run, stored and graphed over time
+- Alerting when the API returns errors for several consecutive runs
+- A health-check command that verifies both the database connection and the API are reachable
+
+
 
 ## Contributing
 
@@ -280,35 +305,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [PoetryDB](https://poetrydb.org/) for the wonderful API
 - [Gregory-Bot](https://github.com/gregory-bot/data-fetch/) for the code walkthrough
 - All the poets whose work is accessible through this API
-
-## Sample Output
-
-```
-============================================================
-POETRY DATABASE FETCHER
-============================================================
-
-Database Statistics:
-  Total poems: 0
-
-Fetching 1 random poem(s)...
-✓ API Request successful: random (234ms)
-✓ Received 1 poem(s) from API
-
-  First poem received:
-  Title: "Hope" is the thing with feathers
-  Author: Emily Dickinson
-  Linecount: 12
-  Lines: 12
-
-✓ Inserted poem: '"Hope" is the thing with feathers' by Emily Dickinson (12 lines)
-✓ Batch insert complete: 1 successful, 0 failed
-
-Total poems in database after insert: 1
-
-Done!
-```
-
----
 
 **Made with ❤️ for poetry lovers and data enthusiasts**
