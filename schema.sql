@@ -7,7 +7,7 @@
 -- Database: poetry_data
 -- 
 -- Usage:
---   psql -U postgres -d poetry -f schema.sql
+--   psql -U postgres -d poetry_data -f schema.sql
 
 -- ===========================================
 -- DROP EXISTING TABLES (if needed)
@@ -21,11 +21,12 @@ DROP TABLE IF EXISTS title CASCADE;
 DROP TABLE IF EXISTS poem_lines CASCADE;
 
 
--- CREATE TABLE poets (
---     id SERIAL PRIMARY KEY,
---     name VARCHAR(255) NOT NULL,
---     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
--- );
+CREATE TABLE poets (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE poems (
     id SERIAL PRIMARY KEY,
@@ -38,6 +39,18 @@ CREATE TABLE poems (
 );
 
 CREATE INDEX idx_poems_title ON poems(title);
+CREATE INDEX idx_poems_author ON poems(author);
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
 
 INSERT INTO poems(title, author, lines, linecount)
 VALUES
@@ -62,6 +75,10 @@ VALUES
         2
     );
 
+INSERT INTO poets (name) VALUES
+    ('Emily Dickinson'),
+    ('John Charles');
+
 CREATE OR REPLACE VIEW poem_details AS
 SELECT 
     id,
@@ -74,6 +91,17 @@ SELECT
 FROM poems
 ORDER BY created_at DESC;
 
+CREATE OR REPLACE VIEW poem_statistics AS
+SELECT 
+    author,
+    COUNT(*) as poem_count,
+    AVG(linecount) as avg_lines,
+    SUM(linecount) as total_lines,
+    MIN(created_at) as first_poem,
+    MAX(created_at) as last_poem
+FROM poems
+GROUP BY author
+ORDER BY poem_count DESC;
 
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO postgres;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO postgres;

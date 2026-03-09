@@ -35,16 +35,16 @@ def create_database():
         
         if not exists:
             cursor.execute(f"CREATE DATABASE {db_name}")
-            print(f"✓ Database '{db_name}' created successfully")
+            print(f"Database '{db_name}' created successfully")
         else:
-            print(f"✓ Database '{db_name}' already exists")
+            print(f"Database '{db_name}' already exists")
         
         cursor.close()
         conn.close()
         return True
         
     except Exception as e:
-        print(f"✗ Failed to create database: {e}")
+        print(f"Failed to create database: {e}")
         return False
 
 
@@ -69,14 +69,14 @@ def run_schema():
         cursor.execute(schema)
         conn.commit()
         
-        print("✓ Schema created successfully")
+        print("Schema created successfully")
         
         cursor.close()
         conn.close()
         return True
         
     except Exception as e:
-        print(f"✗ Failed to create schema: {e}")
+        print(f"Failed to create schema: {e}")
         return False
 
 

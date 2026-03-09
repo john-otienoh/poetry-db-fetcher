@@ -1,12 +1,29 @@
 import psycopg2
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, Json
+from datetime import datetime
 import os
-from psycopg2.extras import Json
 from dotenv import load_dotenv
-from types import SimpleNamespace
+import logging
 
 # Load environment variables
 load_dotenv()
+
+log_dir = 'logs'
+if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+
+log_filename = os.path.join(log_dir, f'poetry_db_{datetime.now().strftime("%Y%m%d")}.log')
+
+# Configure logging to file
+logging.basicConfig(
+    level=os.getenv('LOG_LEVEL', 'INFO'),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename)
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 class DatabaseConnection:
     """Handle PostgreSQL database connections"""
@@ -19,6 +36,7 @@ class DatabaseConnection:
         self.password = os.getenv('DB_PASSWORD')
         self.connection = None
         self.cursor = None
+        logger.info(f"Database Connection Initialized for {self.database}")
     
     def connect(self):
         """Establish database connection"""
@@ -32,20 +50,22 @@ class DatabaseConnection:
             )
             self.connection.autocommit = True
             self.cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-            print(f"Connected to database: {self.database}")
+            logger.info(f"Connected to database: {self.database} (autocommit={self.connection.autocommit})")
             return self.connection
         
         except Exception as e:
-            print(f"Database connection failed: {e}")
+            logger.error(f"✗ Database connection failed: {e}")
             raise
     
     def close(self):
         """Close database connection"""
         if self.cursor:
             self.cursor.close()
+            logger.debug("Cursor closed")
+
         if self.connection:
             self.connection.close()
-            print("Database connection closed")
+            logger.info("Database connection closed")
     
     def execute_query(self, query, params=None, fetch=True):
         """
@@ -72,8 +92,9 @@ class DatabaseConnection:
                 return None
                 
         except Exception as e:
-            print(f"✗ Query execution failed: {e}")
-            self.connection.rollback()
+            logger.error(f"Query execution failed: {e}")
+            if self.connection and not self.connection.autocommit:
+                self.connection.rollback()
             raise
 
     def insert_poem(self, poem):
@@ -93,14 +114,13 @@ class DatabaseConnection:
 
         if isinstance(poem, list):
             if len(poem_data) == 0:
-                print("✗ No poem data to insert")
+                logger.warning("No poem data to insert")
                 return False
             poem_data = poem[0]
         elif isinstance(poem, dict):
-            # Convert SimpleNamespace to dict
             poem_data = poem
         else:
-            print(f"✗ Expected dict or list, got {type(poem)}")
+            logger.error(f"Expected dict or list, got {type(poem)}")
             return False
 
         # Extract data safely with .get() for dicts
@@ -130,10 +150,10 @@ class DatabaseConnection:
         try:
             self.execute_query(query, params, fetch=False)
             self.connection.commit()
-            print(f"✓ Inserted poem: '{title}' by {author} having {linecount} lines.")
+            logger.info(f"Inserted poem: '{title}' by {author} having {linecount} lines.")
             return True
         except Exception as e:
-            print(f"✗ Failed to insert poem: {e}")
+            logger.info(f"Failed to insert poem: {e}")
             if self.connection:
                 self.connection.rollback()
             return False
@@ -141,16 +161,36 @@ class DatabaseConnection:
     def get_all_poems(self):
         """Retrieve all poems from database"""
         query = "SELECT id, title, author, lines, linecount, created_at FROM poems ORDER BY id"
-        return self.execute_query(query)
+        return self.execute_query(query) or []
     
-    def __enter__(self):
-        """Context manager entry."""
-        return self
+    def get_poem_by_id(self, poem_id: int) :
+        query = """
+        SELECT id, title, author, lines, linecount, created_at
+        FROM poems
+        WHERE id= %s
+        """
+        results = self.execute_query(query, (poem_id,))
+        return results[0] if results else None
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit."""
-        self.close()
+    def get_poems_by_author(self, author: str):
+        query = """
+        SELECT id, title, linecount, created_at
+        FROM poems
+        WHERE author ILIKE %s
+        ORDER BY title
+        """
+        return self.execute_query(query, (f'%{author}%',)) or []
 
+    def delete_poem(self, poem_id: int):
+        query = "DELETE FROM poems WHERE id = %s"
+        try:
+            self.execute_query(query, (poem_id,), fetch=False)
+            logger.info(f"Deleted poem with ID: {poem_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete poem {poem_id}: {e}")
+            return False
+        
     def insert_poems_batch(self, poems_list):
         """Insert multiple poems in a single transaction."""
         successful = 0
@@ -162,8 +202,33 @@ class DatabaseConnection:
             else:
                 failed += 1
         
-        print(f"✓ Batch insert complete: {successful} successful, {failed} failed")
+        logger.info(f"✓ Batch insert complete: {successful} successful, {failed} failed")
         return successful, failed
+    def get_statistics(self):
+        """Get database statistics."""
+        stats = {}
+        
+        # Total poems
+        result = self.execute_query("SELECT COUNT(*) as count FROM poems")
+        stats['total_poems'] = result[0]['count'] if result else 0
+        
+        # Total authors
+        result = self.execute_query("SELECT COUNT(DISTINCT author) as count FROM poems")
+        stats['total_authors'] = result[0]['count'] if result else 0
+        if result:
+            stats['top_author_count'] = result[0]['count']
+        
+        return stats
+        
+    def __enter__(self):
+        """Context manager entry."""
+        self.connect()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit."""
+        self.close()
+
 
 if __name__ == "__main__":
     # Test database connection
@@ -173,14 +238,14 @@ if __name__ == "__main__":
         db.connect()
         
         # Test query
-        results = db.execute_query("SELECT COUNT(*) as count FROM poems")
-        if results:
-            count = results[0]['count']
-            print(f"Total poems in database: {count}")
+        stats = db.get_statistics()
+        for key, value in stats.items():
+            print(f"  {key}: {value}")
+
         
         poems = db.get_all_poems()
         if poems:
-            print(f"\nPoems in database:")
+            print(f"\nPoems in database: {len(poems)}")
             for poem in poems:
                 print(f"  - {poem['title']} by {poem['author']} ({poem['linecount']} lines)")
     
